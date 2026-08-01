@@ -35,20 +35,26 @@ function deleteCustomLayout(id) {
 const ed = {
   cells: [rect(0, 0, 1, 1)],
   history: [],
-  mode: 'split',   // 'split' | 'overlay'
+  mode: 'split',      // 'split' | 'overlay' | 'order'
   snap: true,
-  drag: null,      // { from:[x,y], to:[x,y] }
+  drag: null,         // { from:[x,y], to:[x,y] }
+  manualOrder: false, // 読み順を手で入れ替えたら true。以後は自動整列しない
+  pick: null,         // 入れ替え待ちのコマ番号
 };
 
 const clone = cells => cells.map(c => c.map(p => [p[0], p[1]]));
 
 function pushHistory() {
-  ed.history.push(clone(ed.cells));
+  ed.history.push({ cells: clone(ed.cells), manualOrder: ed.manualOrder });
   if (ed.history.length > 60) ed.history.shift();
 }
 
+/**
+ * コマ列を差し替える。
+ * 手動で読み順を調整済みなら、渡された並びをそのまま尊重する。
+ */
 function setCells(cells) {
-  ed.cells = sortToReadingOrder(cells);
+  ed.cells = ed.manualOrder ? cells : sortToReadingOrder(cells);
   refreshEditor();
 }
 
@@ -104,8 +110,9 @@ function editorSvg(preview) {
     const scaled = cell.map(([x, y]) => [x * PAGE_W, y * PAGE_H]);
     const shaped = inset(scaled, GUTTER);
     const dim = preview && preview.kind === 'split' && preview.target === i;
+    const picked = ed.pick === i;
     parts.push(
-      `<polygon class="cell${dim ? ' cell-dim' : ''}" ` +
+      `<polygon class="cell${dim ? ' cell-dim' : ''}${picked ? ' cell-picked' : ''}" ` +
       `points="${shaped.map(([x, y]) => `${round(x)},${round(y)}`).join(' ')}"/>`
     );
     if (!dim) {
@@ -148,9 +155,12 @@ function currentPreview() {
 }
 
 function refreshEditor() {
-  document.getElementById('ed-canvas').innerHTML = editorSvg(currentPreview());
+  const svg = document.getElementById('ed-canvas');
+  svg.innerHTML = editorSvg(currentPreview());
+  svg.classList.toggle('ed-canvas-order', ed.mode === 'order');
   renderAnalysis();
   document.getElementById('ed-undo').disabled = ed.history.length === 0;
+  document.getElementById('ed-auto-order').disabled = !ed.manualOrder;
 }
 
 /* ---------- 自動整理の表示 ---------- */
@@ -169,6 +179,11 @@ function renderAnalysis() {
     <dl class="stat-list">
       <div><dt>コマ数</dt><dd>${n}${inRange ? '' : ' <span class="warn">（保存は2〜7コマ）</span>'}</dd></div>
       <div><dt>段構成シグネチャ</dt><dd><code>${sig || '—'}</code></dd></div>
+      <div><dt>読み順</dt><dd>${ed.manualOrder
+        ? '手動で調整済み'
+        : '自動（右上 → 左 → 下段）'}${ed.pick != null
+          ? ` <span class="warn">— ${ed.pick + 1} を選択中。入れ替え先をクリック</span>`
+          : ''}</dd></div>
       <div><dt>自動タグ</dt><dd>${
         tags.length
           ? tags.map(t => `<span class="tag tag-${t}">${TAGS[t].label}</span>`).join(' ')
@@ -211,15 +226,39 @@ function commitDrag() {
   if (!preview) { ed.drag = null; refreshEditor(); return; }
 
   pushHistory();
+  const next = ed.cells.slice();
   if (preview.kind === 'split') {
-    const next = ed.cells.filter((_, i) => i !== preview.target).concat(preview.parts);
-    ed.drag = null;
-    setCells(next);
+    // 分割してできた2コマは、元のコマがあった位置に差し込む。
+    // 手動で読み順を調整済みでも、その並びが崩れないようにするため。
+    next.splice(preview.target, 1, ...sortToReadingOrder(preview.parts));
   } else {
-    const next = ed.cells.concat([preview.poly]);
-    ed.drag = null;
-    setCells(next);
+    next.push(preview.poly);
   }
+  ed.drag = null;
+  setCells(next);
+}
+
+/** 読み順モードのクリック処理。2つ選ぶと入れ替える */
+function handleOrderClick(pt) {
+  let hit = -1;
+  for (let i = ed.cells.length - 1; i >= 0; i--) {
+    if (pointInPoly(pt, ed.cells[i])) { hit = i; break; }
+  }
+  if (hit < 0) { ed.pick = null; refreshEditor(); return; }
+
+  if (ed.pick === null) {
+    ed.pick = hit;
+  } else if (ed.pick === hit) {
+    ed.pick = null;
+  } else {
+    pushHistory();
+    const next = ed.cells.slice();
+    [next[ed.pick], next[hit]] = [next[hit], next[ed.pick]];
+    ed.manualOrder = true;
+    ed.pick = null;
+    ed.cells = next;
+  }
+  refreshEditor();
 }
 
 function initEditor() {
@@ -227,8 +266,9 @@ function initEditor() {
 
   svg.addEventListener('pointerdown', e => {
     e.preventDefault();
-    try { svg.setPointerCapture(e.pointerId); } catch { /* 捕捉できなくても操作は続く */ }
     const p = toNorm(e, svg);
+    if (ed.mode === 'order') { handleOrderClick(p); return; }
+    try { svg.setPointerCapture(e.pointerId); } catch { /* 捕捉できなくても操作は続く */ }
     ed.drag = { from: p, to: p, freeAngle: ed.mode === 'split' && (ed.snap ? e.shiftKey : !e.shiftKey) };
     refreshEditor();
   });
@@ -250,24 +290,42 @@ function initEditor() {
 
   document.getElementById('ed-undo').addEventListener('click', () => {
     const prev = ed.history.pop();
-    if (prev) { ed.cells = prev; refreshEditor(); }
+    if (!prev) return;
+    ed.cells = prev.cells;
+    ed.manualOrder = prev.manualOrder;
+    ed.pick = null;
+    refreshEditor();
   });
 
   document.getElementById('ed-clear').addEventListener('click', () => {
     pushHistory();
+    ed.manualOrder = false;
+    ed.pick = null;
     setCells([rect(0, 0, 1, 1)]);
+  });
+
+  document.getElementById('ed-auto-order').addEventListener('click', () => {
+    pushHistory();
+    ed.manualOrder = false;
+    ed.pick = null;
+    setCells(ed.cells);
   });
 
   document.getElementById('ed-snap').addEventListener('change', e => {
     ed.snap = e.target.checked;
   });
 
+  const HINTS = {
+    split: 'コマの上をドラッグすると、その方向に分割線が入ります。Shift を押しながらで角度が自由になります。',
+    overlay: 'ドラッグした範囲に重ねゴマを追加します。',
+    order: 'コマを2つ順にクリックすると、その2つの読み順を入れ替えます。',
+  };
   document.querySelectorAll('input[name="ed-mode"]').forEach(r => {
     r.addEventListener('change', e => {
       ed.mode = e.target.value;
-      document.getElementById('ed-hint').textContent = ed.mode === 'split'
-        ? 'コマの上をドラッグすると、その方向に分割線が入ります。Shift を押しながらで角度が自由になります。'
-        : 'ドラッグした範囲に重ねゴマを追加します。';
+      ed.pick = null;
+      document.getElementById('ed-hint').textContent = HINTS[ed.mode];
+      refreshEditor();
     });
   });
 
@@ -318,6 +376,9 @@ function saveFromEditor() {
 /** カタログ詳細から編集用に読み込む */
 function loadIntoEditor(layout) {
   pushHistory();
+  // 元のパターンが持つ読み順をそのまま引き継ぐ（自動整列で書き換えない）
+  ed.manualOrder = true;
+  ed.pick = null;
   setCells(clone(layout.cells));
   document.getElementById('ed-name').value = layout.custom ? layout.name : layout.name + ' 改';
   document.getElementById('ed-status').textContent = '';

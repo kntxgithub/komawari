@@ -120,6 +120,20 @@ body {
 
 .chips { display: flex; flex-wrap: wrap; gap: 7px; }
 
+.chips-actions { display: flex; gap: 10px; margin-left: 4px; }
+.btn-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-link:hover { color: var(--accent); }
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -382,8 +396,10 @@ select {
 .ed-status.ok { color: var(--accent); }
 .ed-status.err { color: #c0392b; }
 
-/* 分割プレビュー */
+/* 分割プレビュー・読み順の選択 */
 .cell-dim { opacity: .28; }
+.cell-picked { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+.ed-canvas-order { cursor: pointer; }
 .cell-preview {
   fill: none;
   stroke: var(--accent);

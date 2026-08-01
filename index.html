@@ -33,6 +33,10 @@
     <div class="control-row">
       <span class="control-label">コマ数</span>
       <div id="count-filters" class="chips"></div>
+      <div class="chips-actions">
+        <button id="count-none" type="button" class="btn-link">全解除</button>
+        <button id="count-all" type="button" class="btn-link">全選択</button>
+      </div>
     </div>
     <div class="control-row">
       <span class="control-label">性格</span>
@@ -85,6 +89,10 @@
             <input type="radio" name="ed-mode" value="overlay">
             <span>重ねゴマ</span>
           </label>
+          <label class="chip">
+            <input type="radio" name="ed-mode" value="order">
+            <span>読み順の入れ替え</span>
+          </label>
           <label class="chip chip-inline">
             <input id="ed-snap" type="checkbox" checked>
             <span>水平・垂直にスナップ</span>
@@ -93,6 +101,7 @@
 
         <div class="ed-buttons">
           <button id="ed-undo" type="button" class="btn-ghost">元に戻す</button>
+          <button id="ed-auto-order" type="button" class="btn-ghost">読み順を自動に戻す</button>
           <button id="ed-clear" type="button" class="btn-ghost">1コマに戻す</button>
         </div>
 

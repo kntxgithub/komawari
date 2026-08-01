@@ -167,7 +167,11 @@ function renderGrid() {
     el.addEventListener('click', () => openDetail(el.dataset.id));
   });
 
-  document.getElementById('empty').hidden = list.length > 0;
+  const empty = document.getElementById('empty');
+  empty.hidden = list.length > 0;
+  empty.textContent = state.counts.size === 0
+    ? 'コマ数を選んでください。'
+    : '条件に合うパターンがありません。タグの組み合わせを緩めてください。';
 }
 
 /* ---------- 詳細 ---------- */
@@ -258,6 +262,14 @@ function buildFilters() {
     e.target.checked ? state.counts.add(n) : state.counts.delete(n);
     renderGrid();
   });
+
+  const setAllCounts = on => {
+    state.counts = on ? new Set([2, 3, 4, 5, 6, 7]) : new Set();
+    countBox.querySelectorAll('input').forEach(i => { i.checked = on; });
+    renderGrid();
+  };
+  document.getElementById('count-none').addEventListener('click', () => setAllCounts(false));
+  document.getElementById('count-all').addEventListener('click', () => setAllCounts(true));
 
   const tagBox = document.getElementById('tag-filters');
   tagBox.innerHTML = Object.entries(TAGS).map(([key, t]) => `
