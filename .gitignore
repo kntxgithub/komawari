@@ -1,0 +1,8 @@
+# ローカル専用の設定（絶対パスを含むため共有しない）
+.claude/
+
+# OS / エディタ
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/

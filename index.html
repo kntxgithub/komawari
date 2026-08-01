@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コマ割りカタログ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <h1>コマ割りカタログ</h1>
+    <p class="lead">
+      2〜7コマのページ構成を、コマ数と性格（動的／静的／大ゴマ含む など）で絞り込んで比較する。
+      <span id="data-mode" class="mode-badge mode-est">推定値のみ</span>
+    </p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="disclosure">
+    <p>
+      <strong>順位の出どころについて。</strong>
+      初期状態の並び順は、漫画の作画技法で一般に定番とされる構成をもとにした<strong>推定スコア</strong>で、
+      実際の作品を数えた統計ではありません。実測値を見たい場合は、ページ下部から
+      Manga109 のアノテーションを取り込んでください。取り込むとカードのバッジが「実測」に切り替わります。
+    </p>
+  </section>
+
+  <section class="controls">
+    <div class="control-row">
+      <span class="control-label">コマ数</span>
+      <div id="count-filters" class="chips"></div>
+    </div>
+    <div class="control-row">
+      <span class="control-label">性格</span>
+      <div id="tag-filters" class="chips"></div>
+    </div>
+    <div class="control-row control-row-end">
+      <label class="chip chip-inline">
+        <input id="custom-only" type="checkbox">
+        <span>自作のみ</span>
+      </label>
+      <label class="sort-label">
+        並べ替え
+        <select id="sort">
+          <option value="est">推定人気順</option>
+          <option value="measured" disabled>実測頻度順（要取り込み）</option>
+          <option value="panels">コマ数順</option>
+          <option value="name">名前順</option>
+        </select>
+      </label>
+      <button id="reset" type="button" class="btn-ghost">条件をリセット</button>
+      <span id="result-count" class="result-count"></span>
+    </div>
+  </section>
+
+  <section id="measured-summary" class="measured-summary" hidden></section>
+
+  <main id="grid" class="grid"></main>
+  <p id="empty" class="empty" hidden>条件に合うパターンがありません。タグの組み合わせを緩めてください。</p>
+
+  <section id="editor" class="editor">
+    <h2>コマ割りを作る</h2>
+    <p id="ed-hint" class="ed-hint">
+      コマの上をドラッグすると、その方向に分割線が入ります。Shift を押しながらで角度が自由になります。
+    </p>
+
+    <div class="editor-body">
+      <div class="editor-canvas-wrap">
+        <svg id="ed-canvas" class="page ed-canvas"
+             viewBox="0 0 100 142" preserveAspectRatio="xMidYMid meet"
+             role="application" aria-label="コマ割りエディタ"></svg>
+      </div>
+
+      <div class="editor-side">
+        <div class="ed-tools">
+          <label class="chip">
+            <input type="radio" name="ed-mode" value="split" checked>
+            <span>分割</span>
+          </label>
+          <label class="chip">
+            <input type="radio" name="ed-mode" value="overlay">
+            <span>重ねゴマ</span>
+          </label>
+          <label class="chip chip-inline">
+            <input id="ed-snap" type="checkbox" checked>
+            <span>水平・垂直にスナップ</span>
+          </label>
+        </div>
+
+        <div class="ed-buttons">
+          <button id="ed-undo" type="button" class="btn-ghost">元に戻す</button>
+          <button id="ed-clear" type="button" class="btn-ghost">1コマに戻す</button>
+        </div>
+
+        <h4 class="ed-subhead">自動整理</h4>
+        <div id="ed-analysis"></div>
+
+        <div class="ed-save">
+          <input id="ed-name" type="text" placeholder="名前（未入力なら自動命名）" maxlength="40">
+          <button id="ed-save" type="button" class="btn-primary">カタログに追加</button>
+        </div>
+        <p id="ed-status" class="ed-status"></p>
+      </div>
+    </div>
+
+    <p class="note">
+      追加したパターンはブラウザの localStorage に保存され、上のカタログに「自作」バッジ付きで並びます。
+      コマ数・段構成・性格タグは形状から自動判定するため、既存パターンと同じ条件で絞り込み・並べ替えができます。
+    </p>
+  </section>
+
+  <section class="importer">
+    <h2>実測データを取り込む</h2>
+    <p>
+      <a href="http://www.manga109.org/" target="_blank" rel="noopener noreferrer">Manga109</a>
+      は 109 冊分のコマ枠座標が注釈された学術用データセットです。
+      <strong>配布元での申請・利用条件の同意はご自身で行ってください。</strong>
+      入手済みの <code>annotations/</code> 内の XML を選ぶと、この場（ブラウザ内）だけで解析します。
+      ファイルはどこにも送信されず、集計結果のみが localStorage に保存されます。画像は読み込みません。
+    </p>
+
+    <div class="import-controls">
+      <label class="btn-file">
+        XML を選択（複数可）
+        <input id="xml-input" type="file" accept=".xml" multiple>
+      </label>
+      <label class="chip chip-inline">
+        <input id="split-spread" type="checkbox" checked>
+        <span>横長ページを見開きとして左右に分割する</span>
+      </label>
+      <button id="clear-measured" type="button" class="btn-ghost" hidden>実測データを消す</button>
+    </div>
+    <p id="import-status" class="import-status"></p>
+
+    <p class="note">
+      制約: アノテーションのコマ枠は軸に平行な外接矩形なので、<strong>斜め分割・重ねゴマ・断ち切りは実測できません</strong>。
+      実測で分かるのはコマ数の分布、段構成、大ゴマ率までです。
+    </p>
+  </section>
+
+  <footer class="site-foot">
+    <p>
+      商用の電子コミック・同人配信サイトからの自動収集は行っていません（各社の利用規約および著作権のため）。
+      本アプリが扱うのはコマの幾何構造のみで、作品画像は一切含みません。
+    </p>
+  </footer>
+</div>
+
+<dialog id="detail" class="detail">
+  <button id="detail-close" type="button" class="detail-close" aria-label="閉じる">×</button>
+  <div id="detail-body"></div>
+</dialog>
+
+<script src="geom.js"></script>
+<script src="data.js"></script>
+<script src="import.js"></script>
+<script src="editor.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
