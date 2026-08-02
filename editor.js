@@ -440,9 +440,18 @@ function refreshEditor() {
   renderAnalysis();
   document.getElementById('ed-undo').disabled = ed.history.length === 0;
   document.getElementById('ed-auto-order').disabled = !ed.manualOrder;
-  document.getElementById('ed-delete-cell').disabled =
-    ed.overlayPick == null || !isRemovable(ed.overlayPick);
-  document.getElementById('ed-delete-line').disabled = !ed.linePick?.merge?.ok;
+  const delCell = document.getElementById('ed-delete-cell');
+  const delLine = document.getElementById('ed-delete-line');
+  delCell.disabled = ed.overlayPick == null || !isRemovable(ed.overlayPick);
+  delLine.disabled = !ed.linePick?.merge?.ok;
+
+  // モード専用の操作は、そのモードのときだけ出す。
+  // 常に出ていると「押せるのに効かないボタン」に見えてしまうため
+  for (const btn of document.querySelectorAll('[data-for-mode]')) {
+    btn.hidden = btn.dataset.forMode !== ed.mode;
+  }
+  delLine.title = delLine.disabled ? '線をクリックして選んでください' : '';
+  delCell.title = delCell.disabled ? '重ねゴマをクリックして選んでください' : '';
 }
 
 /* ---------- 自動整理の表示 ---------- */

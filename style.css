@@ -320,8 +320,15 @@ select {
 
 .editor-side { flex: 1 1 320px; min-width: 280px; }
 
-.ed-tools { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+.ed-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-bottom: 10px; }
 .ed-tools .chip input { display: none; }
+.ed-tools-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-3);
+  letter-spacing: .08em;
+  margin-right: 2px;
+}
 
 .ed-buttons { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .ed-buttons + .ed-buttons { margin-bottom: 16px; }
@@ -443,7 +450,9 @@ select {
 
 .detail-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .btn-danger { color: #c0392b; border-color: #c0392b55; }
-.btn-danger:hover { border-color: #c0392b; color: #c0392b; }
+.btn-danger:hover:enabled { border-color: #c0392b; color: #c0392b; }
+/* 無効なときは赤を外す。赤いままだと押せる状態に見える */
+.btn-danger:disabled { color: var(--ink-3); border-color: var(--line); }
 
 /* ---------- 取り込み ---------- */
 
