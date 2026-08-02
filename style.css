@@ -378,6 +378,12 @@ select {
   stroke-linecap: round;
   opacity: .85;
 }
+.line-picked {
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 4 3;
+}
 .cell-preview {
   fill: none;
   stroke: var(--accent);

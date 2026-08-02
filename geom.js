@@ -239,6 +239,56 @@ function autoTags(cells) {
   return [...tags];
 }
 
+/** 連続する3点が一直線に並んでいるとき、中間の点を落とす */
+function removeCollinear(poly) {
+  if (poly.length <= 3) return poly;
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[(i + poly.length - 1) % poly.length];
+    const c = poly[i];
+    const n = poly[(i + 1) % poly.length];
+    const cross = (c[0] - p[0]) * (n[1] - p[1]) - (c[1] - p[1]) * (n[0] - p[0]);
+    if (Math.abs(cross) > 1e-9) out.push(c);
+  }
+  return out.length >= 3 ? out : poly;
+}
+
+const samePoint = (a, b) => Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
+
+/**
+ * 2つのコマが完全に共有する辺を探す。
+ * 両端が一致する辺だけを対象にする。部分的にしか重ならない辺は、
+ * 統合すると形が一意に決まらないため扱わない。
+ * 返り値: { i, j, flipB } — A[i]→A[i+1] と B[j]→B[j+1] が同じ辺。
+ *         flipB が true なら B を逆回りにしてから使う。
+ */
+function sharedEdge(A, B) {
+  for (const flipB of [false, true]) {
+    const b = flipB ? [...B].reverse() : B;
+    for (let i = 0; i < A.length; i++) {
+      const a0 = A[i], a1 = A[(i + 1) % A.length];
+      for (let j = 0; j < b.length; j++) {
+        const b0 = b[j], b1 = b[(j + 1) % b.length];
+        // 隣り合うコマは共有辺を逆向きに辿る
+        if (samePoint(a0, b1) && samePoint(a1, b0)) return { i, j, flipB };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 共有辺で接する2つのコマを1つに統合する。
+ * 共有辺を通らずに A の外周 → B の外周と辿ることで、境界だけが消える。
+ */
+function mergePolygons(A, B, sh) {
+  const b = sh.flipB ? [...B].reverse() : B;
+  const out = [];
+  for (let k = 1; k <= A.length; k++) out.push(A[(sh.i + k) % A.length]);
+  for (let k = 1; k <= b.length; k++) out.push(b[(sh.j + k) % b.length]);
+  return removeCollinear(dedupePoly(out));
+}
+
 /**
  * ページを左右反転する（x → 1-x）。
  * 鏡像にすると頂点の周回方向が裏返るので、並びも戻しておく。

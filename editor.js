@@ -42,6 +42,7 @@ const ed = {
   manualOrder: false, // 読み順を手で入れ替えたら true。以後は自動整列しない
   pick: null,         // 入れ替え待ちのコマ番号
   hoverLine: null,    // 線モードでカーソル下にある線
+  linePick: null,     // 選択中の線 { group, merge }
   overlayPick: null,  // 選択中の重ねゴマ
 };
 
@@ -210,6 +211,37 @@ function findLineAt(ptNorm) {
   return best ? buildLineGroup(best.e) : null;
 }
 
+/**
+ * その線を消せるか調べる。
+ *
+ * 消すとは、線の両側のコマを1つに統合すること。したがって
+ * **その線に接するコマがちょうど2つ**で、かつ両者が完全に同じ辺を
+ * 共有しているときだけ消せる。
+ *
+ * 3つ以上のコマに接する線（「上1コマ＋下3コマ」の横線など）は、
+ * 消した結果の形が一意に決まらないので対象外。その場合は先に
+ * 下段の縦線を消してコマ数を減らせば、消せるようになる。
+ */
+function deletableLine(group) {
+  const cellIds = [...new Set(group.edges.map(e => e.ci))];
+  if (cellIds.length < 2) {
+    return { ok: false, reason: 'この線はコマの境界ではありません（重ねゴマの辺など）。消すのではなく、そのコマ自体を削除してください。' };
+  }
+  if (cellIds.length > 2) {
+    return {
+      ok: false,
+      reason: `この線には ${cellIds.length} コマが接しています。消せるのは2コマの境界だけです。`
+        + '先に交わる線を消してコマを減らすと、この線も消せるようになります。',
+    };
+  }
+  const [a, b] = cellIds;
+  const sh = sharedEdge(ed.cells[a], ed.cells[b]);
+  if (!sh) {
+    return { ok: false, reason: '2つのコマが辺を完全には共有していないため、統合できません。' };
+  }
+  return { ok: true, keep: Math.min(a, b), drop: Math.max(a, b), a, b, sh };
+}
+
 /* 線を動かして作れるコマの最小の辺（ページ座標）。
    面積だけで見ると、細長い帯のようなコマが作れてしまうため縦横で見る。 */
 const MIN_SIDE = 6;
@@ -354,19 +386,27 @@ function editorSvg(preview) {
     );
   }
 
-  // つかんでいる／つかめる線を、コマの隙間に重ねて示す
-  const marked = preview && preview.kind === 'line' ? preview.group
-    : (ed.mode === 'line' && !ed.drag ? ed.hoverLine : null);
-  if (marked) {
-    const src = preview && preview.kind === 'line' ? preview.cells : ed.cells;
-    for (const e of marked.edges) {
+  // 選択中／つかんでいる／つかめる線を、コマの隙間に重ねて示す
+  const drawLine = (group, cls, src) => {
+    for (const e of group.edges) {
+      if (!src[e.ci]) continue;
       const a = toPage(src[e.ci][e.i]);
       const b = toPage(src[e.ci][e.j]);
       parts.push(
-        `<line class="line-handle" x1="${round(a[0])}" y1="${round(a[1])}" ` +
+        `<line class="${cls}" x1="${round(a[0])}" y1="${round(a[1])}" ` +
         `x2="${round(b[0])}" y2="${round(b[1])}"/>`
       );
     }
+  };
+
+  if (ed.mode === 'line' && ed.linePick && !ed.drag) {
+    drawLine(ed.linePick.group, 'line-picked', ed.cells);
+  }
+  const marked = preview && preview.kind === 'line' ? preview.group
+    : (ed.mode === 'line' && !ed.drag ? ed.hoverLine : null);
+  if (marked) {
+    drawLine(marked, 'line-handle',
+      preview && preview.kind === 'line' ? preview.cells : ed.cells);
   }
 
   return parts.join('');
@@ -402,6 +442,7 @@ function refreshEditor() {
   document.getElementById('ed-auto-order').disabled = !ed.manualOrder;
   document.getElementById('ed-delete-cell').disabled =
     ed.overlayPick == null || !isRemovable(ed.overlayPick);
+  document.getElementById('ed-delete-line').disabled = !ed.linePick?.merge?.ok;
 }
 
 /* ---------- 自動整理の表示 ---------- */
@@ -451,14 +492,42 @@ function toNorm(e, svg) {
   ];
 }
 
+/** 線を選び、消せるかどうかを伝える */
+function selectLine(group) {
+  const status = document.getElementById('ed-status');
+  ed.linePick = group ? { group, merge: deletableLine(group) } : null;
+
+  if (!ed.linePick) {
+    status.className = 'ed-status';
+    status.textContent = '';
+  } else if (ed.linePick.merge.ok) {
+    status.className = 'ed-status';
+    status.textContent = '線を選びました。「選択した線を消す」で両側のコマを1つにできます。';
+  } else {
+    status.className = 'ed-status err';
+    status.textContent = ed.linePick.merge.reason;
+  }
+  refreshEditor();
+}
+
 function commitDrag() {
   const preview = currentPreview();
-  if (!preview) { ed.drag = null; refreshEditor(); return; }
+  if (!preview) {
+    const wasLineMode = ed.mode === 'line';
+    ed.drag = null;
+    if (wasLineMode) selectLine(null); else refreshEditor();
+    return;
+  }
 
   // 形だけが変わる操作。コマの添字は動かないので読み順もそのまま
   if (preview.kind === 'line') {
-    pushHistory();
+    const dist = Math.hypot(ed.drag.to[0] - ed.drag.from[0], ed.drag.to[1] - ed.drag.from[1]);
+    const group = ed.drag.group;
     ed.drag = null;
+    // ほぼ動いていないなら「線を選ぶだけ」の操作とみなす
+    if (dist < 0.01) { selectLine(group); return; }
+    pushHistory();
+    ed.linePick = null;
     setCells(preview.cells, ed.readIndex);
     return;
   }
@@ -505,6 +574,7 @@ function applyTransform(transform, label) {
   const wasManual = ed.manualOrder;
   ed.manualOrder = false;
   ed.pick = null;
+  ed.linePick = null;
   ed.overlayPick = null;
   setCells(transform(ed.cells));
 
@@ -605,6 +675,7 @@ function initEditor() {
     ed.readIndex = prev.readIndex;
     ed.manualOrder = prev.manualOrder;
     ed.pick = null;
+    ed.linePick = null;
     ed.overlayPick = null;
     refreshEditor();
   });
@@ -613,8 +684,44 @@ function initEditor() {
     pushHistory();
     ed.manualOrder = false;
     ed.pick = null;
+    ed.linePick = null;
     ed.overlayPick = null;
     setCells([rect(0, 0, 1, 1)]);
+  });
+
+  document.getElementById('ed-delete-line').addEventListener('click', () => {
+    const pick = ed.linePick;
+    if (!pick || !pick.merge.ok) return;
+    const { keep, drop, a, b, sh } = pick.merge;
+
+    const merged = mergePolygons(ed.cells[a], ed.cells[b], sh);
+    const expected = polyArea(ed.cells[a]) + polyArea(ed.cells[b]);
+    if (merged.length < 3 || Math.abs(polyArea(merged) - expected) > 1e-4) {
+      const status = document.getElementById('ed-status');
+      status.className = 'ed-status err';
+      status.textContent = 'この2コマは統合できませんでした（形が単純な多角形になりません）。';
+      return;
+    }
+
+    pushHistory();
+    const next = ed.cells.slice();
+    next[keep] = merged;
+    next.splice(drop, 1);
+
+    // 統合後のコマは、2つのうち先に読む方の位置を引き継ぐ
+    const ri = ed.readIndex.slice();
+    const pk = ri.indexOf(keep), pd = ri.indexOf(drop);
+    const lo = Math.min(pk, pd), hi = Math.max(pk, pd);
+    ri.splice(hi, 1);
+    ri[lo] = keep;
+
+    ed.linePick = null;
+    ed.hoverLine = null;
+    setCells(next, ri.map(k => k > drop ? k - 1 : k));
+
+    const status = document.getElementById('ed-status');
+    status.className = 'ed-status ok';
+    status.textContent = `線を消して2コマを1つにしました（${next.length}コマ）。`;
   });
 
   document.getElementById('ed-delete-cell').addEventListener('click', () => {
@@ -651,7 +758,7 @@ function initEditor() {
     split: 'コマの上をドラッグすると、その方向に分割線が入ります。Shift を押しながらで角度が自由になります。',
     overlay: '何もない所をドラッグすると、その範囲に重ねゴマを追加します。'
       + '既にある重ねゴマの上をドラッグすると移動、クリックで選択して「選択した重ねゴマを削除」で消せます。',
-    line: '境界線に近づけると線が光ります。ドラッグすると線と垂直な向きに平行移動します。ページの外枠は動かせません。',
+    line: '境界線に近づけると線が光ります。ドラッグで平行移動、クリックで選択して「選択した線を消す」で両側のコマを1つにできます。ページの外枠は動かせません。',
     order: 'コマを2つ順にクリックすると、その2つの読み順を入れ替えます。',
   };
   document.querySelectorAll('input[name="ed-mode"]').forEach(r => {
@@ -659,6 +766,7 @@ function initEditor() {
       ed.mode = e.target.value;
       ed.pick = null;
       ed.hoverLine = null;
+      ed.linePick = null;
       ed.overlayPick = null;
       document.getElementById('ed-hint').textContent = HINTS[ed.mode];
       refreshEditor();
@@ -716,6 +824,7 @@ function loadIntoEditor(layout) {
   // 元のパターンが持つ読み順と重ね順をそのまま引き継ぐ（自動整列で書き換えない）
   ed.manualOrder = true;
   ed.pick = null;
+  ed.linePick = null;
   ed.overlayPick = null;
   const cells = clone(layout.cells);
   setCells(cells, isValidReadIndex(layout.readIndex, cells.length)
