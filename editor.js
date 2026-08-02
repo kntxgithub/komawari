@@ -430,7 +430,7 @@ function renderAnalysis() {
           : '—'}</dd></div>
       <div><dt>同じ構成の既存パターン</dt><dd>${
         similar.length
-          ? similar.map(l => `<a href="#" data-open="${l.id}">${escapeHtml(l.name)}</a>`).join('、')
+          ? similar.map(l => `<a href="#" data-open="${l.id}">${escapeHtml(displayName(l))}</a>`).join('、')
           : 'なし（新しい構成です）'}</dd></div>
     </dl>`;
 

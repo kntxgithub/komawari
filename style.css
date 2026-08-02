@@ -234,6 +234,29 @@ select {
   font-weight: 700;
 }
 .badge-est { background: transparent; color: var(--ink-3); border: 1px solid var(--line); }
+.badge-rating { background: var(--accent-soft); color: var(--accent); }
+
+.card-structure {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+
+/* 手動並び順のドラッグ */
+.grid-sortable .card { cursor: grab; user-select: none; }
+.grid-sortable .card:active { cursor: grabbing; }
+.card-dragging { opacity: .45; }
+.card-drop { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+
+.reorder-hint {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.reorder-hint .btn-link { margin-left: 8px; }
 
 .card-title {
   margin: 2px 0 7px;
@@ -380,6 +403,37 @@ select {
 .sync-status { margin: 12px 0 0; font-size: 13px; min-height: 1.2em; }
 .sync-status.ok { color: var(--accent); }
 .sync-status.err { color: #c0392b; }
+
+.rename-row, .rating-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.rename-row input {
+  flex: 1 1 180px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13.5px;
+  font-family: inherit;
+}
+.rating-label { font-size: 12.5px; color: var(--ink-3); }
+.stars { display: inline-flex; gap: 2px; }
+.star {
+  border: none;
+  background: none;
+  padding: 0 1px;
+  font-size: 19px;
+  line-height: 1;
+  color: var(--line);
+  cursor: pointer;
+}
+.star:hover { color: var(--accent); }
+.star-on { color: var(--accent); }
 
 .detail-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .btn-danger { color: #c0392b; border-color: #c0392b55; }

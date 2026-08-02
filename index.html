@@ -50,13 +50,21 @@
         並べ替え
         <select id="sort">
           <option value="est">推定人気順</option>
+          <option value="rating">お気に入り順</option>
+          <option value="manual">手動並び順</option>
           <option value="panels">コマ数順</option>
+          <option value="tiers">段数順</option>
+          <option value="cols">列数順</option>
           <option value="name">名前順</option>
         </select>
       </label>
       <button id="reset" type="button" class="btn-ghost">条件をリセット</button>
       <span id="result-count" class="result-count"></span>
     </div>
+    <p id="reorder-hint" class="reorder-hint" hidden>
+      カードをドラッグして入れ替えられます。並びは絞り込みをまたいで保持されます。
+      <button id="reorder-reset" type="button" class="btn-link">並びを初期化</button>
+    </p>
   </section>
 
   <main id="grid" class="grid"></main>
@@ -150,7 +158,8 @@
     <p id="sync-status" class="sync-status"></p>
 
     <p class="note">
-      書き出しに入るのは自作パターンの幾何情報だけです。作品画像は含みません。
+      書き出しに入るのは、自作パターンの幾何情報と、付けた名前・お気に入り度・手動並び順です。
+      作品画像は含みません。
       読み込み時、段構成と性格タグはファイルの値を使わず形状から引き直すため、
       判定ルールを変えた後でも分類がずれません。
     </p>
@@ -171,6 +180,7 @@
 
 <script src="geom.js"></script>
 <script src="data.js"></script>
+<script src="meta.js"></script>
 <script src="editor.js"></script>
 <script src="sync.js"></script>
 <script src="app.js"></script>

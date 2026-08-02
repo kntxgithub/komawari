@@ -69,6 +69,9 @@ function exportPatterns() {
       id: l.id, name: l.name, cells: l.cells, readIndex: l.readIndex,
       note: l.note, createdAt: l.createdAt,
     })),
+    // 名前の上書き・お気に入り度・手動並び順。シードや共有パターンに
+    // 付けたものも含むので、パターン本体とは別に運ぶ
+    meta,
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -103,7 +106,29 @@ function importPatterns(json) {
     added++;
   }
   persistCustomLayouts();
-  return { added, skipped };
+
+  // 付加情報は上書きではなく重ね合わせる。取り込み先で既に付けた
+  // 名前や評価を、ファイル側の値で消さないため
+  let metaMerged = 0;
+  const inMeta = json.meta;
+  if (inMeta && typeof inMeta === 'object') {
+    for (const [id, name] of Object.entries(inMeta.names || {})) {
+      if (typeof name === 'string' && !meta.names[id]) { meta.names[id] = name; metaMerged++; }
+    }
+    for (const [id, v] of Object.entries(inMeta.ratings || {})) {
+      if (Number.isInteger(v) && !meta.ratings[id]) { meta.ratings[id] = v; metaMerged++; }
+    }
+    // 自分で並べ替えていなければファイル側の並びを採用する。
+    // 表示のために自動で埋まっただけの並びは「自分の並び」ではない
+    if (Array.isArray(inMeta.order) && inMeta.orderTouched && !meta.orderTouched) {
+      meta.order = inMeta.order.filter(x => typeof x === 'string');
+      meta.orderTouched = true;
+      if (meta.order.length) metaMerged++;
+    }
+    persistMeta();
+  }
+
+  return { added, skipped, metaMerged };
 }
 
 /** 起動時に patterns.json を読む。無ければ黙って諦める */
