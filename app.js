@@ -16,9 +16,9 @@ const state = {
   selected: null,
 };
 
-/** シードパターン＋自作パターン */
+/** シードパターン＋共有パターン＋自作パターン */
 function allLayouts() {
-  return LAYOUTS.concat(customLayouts);
+  return LAYOUTS.concat(sharedLayouts, customLayouts);
 }
 
 /* ---------- SVG 描画 ---------- */
@@ -138,7 +138,10 @@ function cardHtml(layout) {
     : (layout.custom
       ? ''
       : `<span class="badge badge-est">推定 ${layout.est}</span>`);
-  const badge = (layout.custom ? '<span class="badge badge-custom">自作</span>' : '') + scoreBadge;
+  const originBadge = layout.shared
+    ? '<span class="badge badge-shared">共有</span>'
+    : (layout.custom ? '<span class="badge badge-custom">自作</span>' : '');
+  const badge = originBadge + scoreBadge;
 
   const tags = layout.tags
     .map(t => `<span class="tag tag-${t}">${TAGS[t].label}</span>`).join('');
@@ -210,9 +213,11 @@ function openDetail(id) {
       <div class="detail-info">
         <div class="card-head">
           <span class="count-chip">${layout.panels}コマ</span>
-          ${layout.custom
-            ? '<span class="badge badge-custom">自作</span>'
-            : `<span class="badge badge-est">推定スコア ${layout.est}</span>`}
+          ${layout.shared
+            ? '<span class="badge badge-shared">共有</span>'
+            : layout.custom
+              ? '<span class="badge badge-custom">自作</span>'
+              : `<span class="badge badge-est">推定スコア ${layout.est}</span>`}
         </div>
         <h3>${escapeHtml(layout.name)}</h3>
         <p class="detail-note">${escapeHtml(layout.note)}</p>
@@ -224,8 +229,11 @@ function openDetail(id) {
         </dl>
         <div class="detail-actions">
           <button type="button" class="btn-ghost" data-act="edit">この構成をエディタで開く</button>
-          ${layout.custom
+          ${layout.custom && !layout.shared
             ? '<button type="button" class="btn-ghost btn-danger" data-act="delete">削除</button>'
+            : ''}
+          ${layout.shared
+            ? '<span class="note">共有パターンです。消すにはリポジトリの patterns.json を編集してください。</span>'
             : ''}
         </div>
       </div>
@@ -361,6 +369,45 @@ function buildImporter() {
   });
 }
 
+/* ---------- 持ち出し・持ち込み ---------- */
+
+function buildSync() {
+  const status = document.getElementById('sync-status');
+
+  document.getElementById('export-patterns').addEventListener('click', () => {
+    if (customLayouts.length === 0 && !state.measured) {
+      status.className = 'sync-status err';
+      status.textContent = '書き出すデータがありません。';
+      return;
+    }
+    const n = exportPatterns();
+    status.className = 'sync-status ok';
+    status.textContent = `patterns.json を書き出しました（自作 ${n} 件`
+      + (state.measured ? '、実測データを含む' : '') + '）。';
+  });
+
+  const input = document.getElementById('import-patterns');
+  input.addEventListener('change', async () => {
+    if (!input.files.length) return;
+    try {
+      const json = JSON.parse(await input.files[0].text());
+      const r = importPatterns(json);
+      renderMeasuredSummary();
+      renderGrid();
+      renderAnalysis();
+      status.className = 'sync-status ok';
+      status.textContent = `${r.added} 件を追加しました`
+        + (r.skipped ? `（重複・不正な ${r.skipped} 件は取り込まず）` : '')
+        + (r.measured ? '。実測データも取り込みました' : '') + '。';
+    } catch (e) {
+      status.className = 'sync-status err';
+      status.textContent = `失敗: ${e.message}`;
+    } finally {
+      input.value = '';
+    }
+  });
+}
+
 function renderMeasuredSummary() {
   const box = document.getElementById('measured-summary');
   const m = state.measured;
@@ -411,12 +458,20 @@ function renderMeasuredSummary() {
 
 /* ---------- 起動 ---------- */
 
-function init() {
+async function init() {
   buildFilters();
   buildImporter();
+  buildSync();
   renderMeasuredSummary();
   renderGrid();
   initEditor();
+
+  // 共有パターンは取得を待たずに描画し、届いたら差し替える
+  await loadSharedPatterns();
+  if (sharedLayouts.length) {
+    renderGrid();
+    renderAnalysis();
+  }
 
   const dlg = document.getElementById('detail');
   document.getElementById('detail-close').addEventListener('click', () => dlg.close());

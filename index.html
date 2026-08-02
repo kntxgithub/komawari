@@ -131,6 +131,35 @@
   </section>
 
   <section class="importer">
+    <h2>別の端末に持っていく</h2>
+    <p>
+      保存先はこのブラウザの localStorage です。<strong>オリジンごと・端末ごとに別の保管庫</strong>で、
+      アカウント同期でも共有されません。別の端末で同じデータを使うには、次のどちらかで運びます。
+    </p>
+    <ol class="sync-steps">
+      <li><strong>ファイルで運ぶ</strong> … 「書き出し」した <code>patterns.json</code> を、
+        別の端末で「読み込み」する。push は不要。</li>
+      <li><strong>リポジトリに置く</strong> … 書き出した <code>patterns.json</code> をリポジトリ直下に置いて
+        push すると、以後どの端末でも起動時に自動で読み込まれます（「共有」バッジが付きます）。</li>
+    </ol>
+
+    <div class="import-controls">
+      <button id="export-patterns" type="button" class="btn-file">書き出し（patterns.json）</button>
+      <label class="btn-file btn-file-ghost">
+        読み込み
+        <input id="import-patterns" type="file" accept=".json,application/json">
+      </label>
+    </div>
+    <p id="sync-status" class="sync-status"></p>
+
+    <p class="note">
+      書き出しには自作パターンと、取り込み済みの実測データが入ります。作品画像は含みません。
+      読み込み時、段構成と性格タグはファイルの値を使わず形状から引き直すため、
+      判定ルールを変えた後でも分類がずれません。
+    </p>
+  </section>
+
+  <section class="importer">
     <h2>実測データを取り込む</h2>
     <p>
       <a href="http://www.manga109.org/" target="_blank" rel="noopener noreferrer">Manga109</a>
@@ -176,6 +205,7 @@
 <script src="data.js"></script>
 <script src="import.js"></script>
 <script src="editor.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

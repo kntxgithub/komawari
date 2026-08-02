@@ -417,6 +417,22 @@ select {
 }
 
 .badge-custom { background: var(--accent); color: #fff; }
+.badge-shared { background: var(--ink-2); color: var(--surface); }
+
+.sync-steps { margin: 0 0 14px; padding-left: 1.3em; font-size: 13.5px; color: var(--ink-2); }
+.sync-steps li { margin-bottom: 4px; }
+.sync-steps strong { color: var(--ink); }
+
+.btn-file-ghost {
+  background: transparent;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.btn-file-ghost:hover { border-color: var(--ink-3); color: var(--ink); }
+
+.sync-status { margin: 12px 0 0; font-size: 13px; min-height: 1.2em; }
+.sync-status.ok { color: var(--accent); }
+.sync-status.err { color: #c0392b; }
 
 .detail-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .btn-danger { color: #c0392b; border-color: #c0392b55; }
