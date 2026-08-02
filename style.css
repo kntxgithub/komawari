@@ -63,18 +63,6 @@ body {
 }
 .lead { margin: 0; color: var(--ink-2); font-size: 14px; }
 
-.mode-badge {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 1px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  vertical-align: 2px;
-}
-.mode-est { background: var(--surface-2); color: var(--ink-3); }
-.mode-measured { background: var(--accent-soft); color: var(--accent); }
-
 /* ---------- 但し書き ---------- */
 
 .disclosure {
@@ -246,8 +234,6 @@ select {
   font-weight: 700;
 }
 .badge-est { background: transparent; color: var(--ink-3); border: 1px solid var(--line); }
-.badge-measured { background: var(--accent-soft); color: var(--accent); }
-.badge-none { color: var(--ink-3); font-weight: 400; font-size: 11px; }
 
 .card-title {
   margin: 2px 0 7px;
@@ -283,45 +269,6 @@ select {
   fill: var(--ink-3);
   font-family: system-ui, sans-serif;
 }
-
-/* ---------- 実測サマリー ---------- */
-
-.measured-summary {
-  margin: 0 0 24px;
-  padding: 16px 18px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-.measured-summary h3 { margin: 0 0 10px; font-size: 15px; }
-.measured-summary h3 small { font-weight: 400; color: var(--ink-3); font-size: 12.5px; margin-left: 6px; }
-
-.summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.summary-table th {
-  text-align: left;
-  font-size: 11.5px;
-  color: var(--ink-3);
-  letter-spacing: .06em;
-  border-bottom: 1px solid var(--line);
-  padding: 4px 8px 4px 0;
-  font-weight: 700;
-}
-.summary-table td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--line); }
-.summary-table td:first-child { font-weight: 700; width: 60px; }
-.summary-table td:nth-child(2) { width: 80px; color: var(--ink-2); }
-.summary-table td:last-child { width: 90px; color: var(--ink-2); }
-
-.bar {
-  display: inline-block;
-  width: var(--w);
-  max-width: 240px;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--accent);
-  vertical-align: middle;
-  margin-right: 8px;
-}
-.bar-val { color: var(--ink-2); font-variant-numeric: tabular-nums; }
 
 /* ---------- エディタ ---------- */
 
@@ -470,11 +417,6 @@ select {
   cursor: pointer;
 }
 .btn-file input { display: none; }
-
-.import-status { margin: 12px 0 0; font-size: 13px; min-height: 1.2em; }
-.import-status.working { color: var(--ink-2); }
-.import-status.ok { color: var(--accent); }
-.import-status.err { color: #c0392b; }
 
 .note { font-size: 12.5px; color: var(--ink-3); line-height: 1.7; }
 .note strong { color: var(--ink-2); }

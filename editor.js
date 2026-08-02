@@ -41,6 +41,7 @@ const ed = {
   manualOrder: false, // 読み順を手で入れ替えたら true。以後は自動整列しない
   pick: null,         // 入れ替え待ちのコマ番号
   hoverLine: null,    // 線モードでカーソル下にある線
+  overlayPick: null,  // 選択中の重ねゴマ
 };
 
 const clone = cells => cells.map(c => c.map(p => [p[0], p[1]]));
@@ -260,20 +261,55 @@ function planOverlay(drag) {
   return rect(x0, y0, x1 - x0, y1 - y0);
 }
 
+/**
+ * そのコマを消してもページに穴が空かないか。
+ * 残りのコマだけでページを覆えるなら消せる = 重ねゴマである、ということ。
+ * 敷き詰めたコマを消すと穴が残るので、それは許さない。
+ */
+function isRemovable(index) {
+  const rest = ed.cells.reduce((s, c, i) => i === index ? s : s + polyArea(c), 0);
+  return rest >= 0.999;
+}
+
+/** 指定位置にある「動かせる重ねゴマ」を探す（上に描かれているものを優先） */
+function findOverlayAt(pt) {
+  for (let i = ed.cells.length - 1; i >= 0; i--) {
+    if (pointInPoly(pt, ed.cells[i]) && isRemovable(i)) return i;
+  }
+  return -1;
+}
+
+/** コマ全体を平行移動する。ページからはみ出す分は端で止める */
+function moveCell(index, deltaNorm) {
+  const b = bboxOf(ed.cells[index]);
+  const dx = Math.min(1 - b.x1, Math.max(-b.x0, deltaNorm[0]));
+  const dy = Math.min(1 - b.y1, Math.max(-b.y0, deltaNorm[1]));
+  const next = clone(ed.cells);
+  next[index] = next[index].map(([x, y]) => [round6(x + dx), round6(y + dy)]);
+  return next;
+}
+
+function samePoly(a, b) {
+  return a.length === b.length
+    && a.every((p, i) => Math.abs(p[0] - b[i][0]) < 1e-9 && Math.abs(p[1] - b[i][1]) < 1e-9);
+}
+
 /* ---------- 描画 ---------- */
 
 function editorSvg(preview) {
   const parts = [];
   parts.push(`<rect class="page-bg" x="0" y="0" width="${PAGE_W}" height="${PAGE_H}"/>`);
 
-  // 線の移動中は移動後の形を直接見せる
-  const cells = preview && preview.kind === 'line' ? preview.cells : ed.cells;
+  // 線・コマの移動中は移動後の形を直接見せる
+  const cells = preview && (preview.kind === 'line' || preview.kind === 'move')
+    ? preview.cells : ed.cells;
 
   cells.forEach((cell, i) => {
     const scaled = cell.map(([x, y]) => [x * PAGE_W, y * PAGE_H]);
     const shaped = inset(scaled, GUTTER);
     const dim = preview && preview.kind === 'split' && preview.target === i;
-    const picked = ed.pick === i;
+    const picked = (ed.mode === 'order' && ed.pick === i)
+                || (ed.mode === 'overlay' && ed.overlayPick === i);
     parts.push(
       `<polygon class="cell${dim ? ' cell-dim' : ''}${picked ? ' cell-picked' : ''}" ` +
       `points="${shaped.map(([x, y]) => `${round(x)},${round(y)}`).join(' ')}"/>`
@@ -331,6 +367,10 @@ function currentPreview() {
     return cells ? { kind: 'line', cells, group: ed.drag.group } : null;
   }
   if (ed.mode === 'overlay') {
+    if (ed.drag.moveIndex != null) {
+      const delta = [ed.drag.to[0] - ed.drag.from[0], ed.drag.to[1] - ed.drag.from[1]];
+      return { kind: 'move', index: ed.drag.moveIndex, cells: moveCell(ed.drag.moveIndex, delta) };
+    }
     const poly = planOverlay(ed.drag);
     return poly ? { kind: 'overlay', poly } : null;
   }
@@ -346,6 +386,8 @@ function refreshEditor() {
   renderAnalysis();
   document.getElementById('ed-undo').disabled = ed.history.length === 0;
   document.getElementById('ed-auto-order').disabled = !ed.manualOrder;
+  document.getElementById('ed-delete-cell').disabled =
+    ed.overlayPick == null || !isRemovable(ed.overlayPick);
 }
 
 /* ---------- 自動整理の表示 ---------- */
@@ -358,7 +400,6 @@ function renderAnalysis() {
   const inRange = n >= 2 && n <= 7;
 
   const similar = allLayouts().filter(l => l.panels === n && l.sig === sig);
-  const measured = measuredShareFor(n, sig);
 
   document.getElementById('ed-analysis').innerHTML = `
     <dl class="stat-list">
@@ -377,9 +418,6 @@ function renderAnalysis() {
         similar.length
           ? similar.map(l => `<a href="#" data-open="${l.id}">${escapeHtml(l.name)}</a>`).join('、')
           : 'なし（新しい構成です）'}</dd></div>
-      ${measured != null
-        ? `<div><dt>この構成の実測出現率</dt><dd>${pct(measured)}</dd></div>`
-        : ''}
     </dl>`;
 
   document.querySelectorAll('#ed-analysis a[data-open]').forEach(a => {
@@ -387,13 +425,6 @@ function renderAnalysis() {
   });
 
   document.getElementById('ed-save').disabled = !inRange;
-}
-
-/** コマ数とシグネチャから実測出現率を引く（未取り込みなら null） */
-function measuredShareFor(n, sig) {
-  const m = state.measured;
-  if (!m || !m.byCount?.[n]) return null;
-  return (m.bySig?.[sig]?.byCount?.[n] || 0) / m.byCount[n];
 }
 
 /* ---------- 操作 ---------- */
@@ -414,6 +445,20 @@ function commitDrag() {
     pushHistory();
     ed.drag = null;
     setCells(preview.cells);
+    return;
+  }
+
+  if (preview.kind === 'move') {
+    const dist = Math.hypot(ed.drag.to[0] - ed.drag.from[0], ed.drag.to[1] - ed.drag.from[1]);
+    ed.drag = null;
+    // ほぼ動いていないなら「選ぶだけ」の操作とみなす
+    if (dist < 0.01) { refreshEditor(); return; }
+    pushHistory();
+    const moved = preview.cells[preview.index];
+    setCells(preview.cells);
+    // 並べ替えで位置が変わるので、選択を追いかけ直す
+    ed.overlayPick = ed.cells.findIndex(c => samePoly(c, moved));
+    refreshEditor();
     return;
   }
 
@@ -440,6 +485,7 @@ function applyTransform(transform, label) {
   const wasManual = ed.manualOrder;
   ed.manualOrder = false;
   ed.pick = null;
+  ed.overlayPick = null;
   setCells(transform(ed.cells));
 
   const status = document.getElementById('ed-status');
@@ -485,6 +531,16 @@ function initEditor() {
       ed.drag.group = findLineAt(p);
       ed.drag.lastValid = null;
     }
+    if (ed.mode === 'overlay') {
+      // 既にある重ねゴマの上なら移動、それ以外なら新規作成
+      const hit = findOverlayAt(p);
+      if (hit >= 0) {
+        ed.drag.moveIndex = hit;
+        ed.overlayPick = hit;
+      } else {
+        ed.overlayPick = null;
+      }
+    }
     refreshEditor();
   });
 
@@ -525,6 +581,7 @@ function initEditor() {
     ed.cells = prev.cells;
     ed.manualOrder = prev.manualOrder;
     ed.pick = null;
+    ed.overlayPick = null;
     refreshEditor();
   });
 
@@ -532,7 +589,16 @@ function initEditor() {
     pushHistory();
     ed.manualOrder = false;
     ed.pick = null;
+    ed.overlayPick = null;
     setCells([rect(0, 0, 1, 1)]);
+  });
+
+  document.getElementById('ed-delete-cell').addEventListener('click', () => {
+    const i = ed.overlayPick;
+    if (i == null || !isRemovable(i)) return;
+    pushHistory();
+    ed.overlayPick = null;
+    setCells(ed.cells.filter((_, k) => k !== i));
   });
 
   document.getElementById('ed-auto-order').addEventListener('click', () => {
@@ -557,7 +623,8 @@ function initEditor() {
 
   const HINTS = {
     split: 'コマの上をドラッグすると、その方向に分割線が入ります。Shift を押しながらで角度が自由になります。',
-    overlay: 'ドラッグした範囲に重ねゴマを追加します。',
+    overlay: '何もない所をドラッグすると、その範囲に重ねゴマを追加します。'
+      + '既にある重ねゴマの上をドラッグすると移動、クリックで選択して「選択した重ねゴマを削除」で消せます。',
     line: '境界線に近づけると線が光ります。ドラッグすると線と垂直な向きに平行移動します。ページの外枠は動かせません。',
     order: 'コマを2つ順にクリックすると、その2つの読み順を入れ替えます。',
   };
@@ -566,6 +633,7 @@ function initEditor() {
       ed.mode = e.target.value;
       ed.pick = null;
       ed.hoverLine = null;
+      ed.overlayPick = null;
       document.getElementById('ed-hint').textContent = HINTS[ed.mode];
       refreshEditor();
     });

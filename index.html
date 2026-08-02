@@ -13,7 +13,6 @@
     <h1>コマ割りカタログ</h1>
     <p class="lead">
       2〜7コマのページ構成を、コマ数と性格（動的／静的／大ゴマ含む など）で絞り込んで比較する。
-      <span id="data-mode" class="mode-badge mode-est">推定値のみ</span>
     </p>
   </div>
 </header>
@@ -23,9 +22,9 @@
   <section class="disclosure">
     <p>
       <strong>順位の出どころについて。</strong>
-      初期状態の並び順は、漫画の作画技法で一般に定番とされる構成をもとにした<strong>推定スコア</strong>で、
-      実際の作品を数えた統計ではありません。実測値を見たい場合は、ページ下部から
-      Manga109 のアノテーションを取り込んでください。取り込むとカードのバッジが「実測」に切り替わります。
+      「推定人気順」の並び順は、漫画の作画技法で一般に定番とされる構成をもとにした<strong>推定スコア</strong>です。
+      実際の作品を数えた統計ではありません。カードの「推定 NN」はその主観的なスコアで、
+      出現頻度の実測値ではない点にご注意ください。
     </p>
   </section>
 
@@ -51,7 +50,6 @@
         並べ替え
         <select id="sort">
           <option value="est">推定人気順</option>
-          <option value="measured" disabled>実測頻度順（要取り込み）</option>
           <option value="panels">コマ数順</option>
           <option value="name">名前順</option>
         </select>
@@ -60,8 +58,6 @@
       <span id="result-count" class="result-count"></span>
     </div>
   </section>
-
-  <section id="measured-summary" class="measured-summary" hidden></section>
 
   <main id="grid" class="grid"></main>
   <p id="empty" class="empty" hidden>条件に合うパターンがありません。タグの組み合わせを緩めてください。</p>
@@ -110,6 +106,7 @@
         </div>
         <div class="ed-buttons">
           <button id="ed-undo" type="button" class="btn-ghost">元に戻す</button>
+          <button id="ed-delete-cell" type="button" class="btn-ghost btn-danger">選択した重ねゴマを削除</button>
           <button id="ed-clear" type="button" class="btn-ghost">1コマに戻す</button>
         </div>
 
@@ -153,38 +150,9 @@
     <p id="sync-status" class="sync-status"></p>
 
     <p class="note">
-      書き出しには自作パターンと、取り込み済みの実測データが入ります。作品画像は含みません。
+      書き出しに入るのは自作パターンの幾何情報だけです。作品画像は含みません。
       読み込み時、段構成と性格タグはファイルの値を使わず形状から引き直すため、
       判定ルールを変えた後でも分類がずれません。
-    </p>
-  </section>
-
-  <section class="importer">
-    <h2>実測データを取り込む</h2>
-    <p>
-      <a href="http://www.manga109.org/" target="_blank" rel="noopener noreferrer">Manga109</a>
-      は 109 冊分のコマ枠座標が注釈された学術用データセットです。
-      <strong>配布元での申請・利用条件の同意はご自身で行ってください。</strong>
-      入手済みの <code>annotations/</code> 内の XML を選ぶと、この場（ブラウザ内）だけで解析します。
-      ファイルはどこにも送信されず、集計結果のみが localStorage に保存されます。画像は読み込みません。
-    </p>
-
-    <div class="import-controls">
-      <label class="btn-file">
-        XML を選択（複数可）
-        <input id="xml-input" type="file" accept=".xml" multiple>
-      </label>
-      <label class="chip chip-inline">
-        <input id="split-spread" type="checkbox" checked>
-        <span>横長ページを見開きとして左右に分割する</span>
-      </label>
-      <button id="clear-measured" type="button" class="btn-ghost" hidden>実測データを消す</button>
-    </div>
-    <p id="import-status" class="import-status"></p>
-
-    <p class="note">
-      制約: アノテーションのコマ枠は軸に平行な外接矩形なので、<strong>斜め分割・重ねゴマ・断ち切りは実測できません</strong>。
-      実測で分かるのはコマ数の分布、段構成、大ゴマ率までです。
     </p>
   </section>
 
@@ -203,7 +171,6 @@
 
 <script src="geom.js"></script>
 <script src="data.js"></script>
-<script src="import.js"></script>
 <script src="editor.js"></script>
 <script src="sync.js"></script>
 <script src="app.js"></script>

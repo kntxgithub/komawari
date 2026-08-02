@@ -64,7 +64,6 @@ function exportPatterns() {
     custom: customLayouts.map(l => ({
       id: l.id, name: l.name, cells: l.cells, note: l.note, createdAt: l.createdAt,
     })),
-    measured: state.measured || null,
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -99,14 +98,7 @@ function importPatterns(json) {
     added++;
   }
   persistCustomLayouts();
-
-  let measured = false;
-  if (json.measured && json.measured.byCount) {
-    saveStats(json.measured);
-    state.measured = json.measured;
-    measured = true;
-  }
-  return { added, skipped, measured };
+  return { added, skipped };
 }
 
 /** 起動時に patterns.json を読む。無ければ黙って諦める */

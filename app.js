@@ -12,7 +12,6 @@ const state = {
   tags: new Set(),
   sort: 'est',
   customOnly: false,
-  measured: loadStats(),
   selected: null,
 };
 
@@ -74,33 +73,6 @@ function escapeHtml(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-/* ---------- 実測データ参照 ---------- */
-
-/** このパターンと同じ構造シグネチャが、同コマ数ページ中で占める割合 */
-function measuredShare(layout) {
-  const m = state.measured;
-  if (!m) return null;
-  const denom = m.byCount[layout.panels];
-  if (!denom) return null;
-  const hit = m.bySig[layout.sig]?.byCount?.[layout.panels] || 0;
-  return { share: hit / denom, hit, denom };
-}
-
-/** そのコマ数のページが全体に占める割合 */
-function measuredCountShare(n) {
-  const m = state.measured;
-  if (!m || !m.countedPages) return null;
-  return (m.byCount[n] || 0) / m.countedPages;
-}
-
-function measuredLargeRate(n) {
-  const m = state.measured;
-  if (!m || !m.byCount[n]) return null;
-  return (m.largeByCount[n] || 0) / m.byCount[n];
-}
-
-const pct = v => (v * 100).toFixed(1) + '%';
-
 /* ---------- 絞り込み・並べ替え ---------- */
 
 function visibleLayouts() {
@@ -116,11 +88,6 @@ function visibleLayouts() {
     // 自作は推定スコアを持たないので先頭にまとめる
     est: (a, b) => (b.custom ? 1 : 0) - (a.custom ? 1 : 0)
       || (b.est ?? 0) - (a.est ?? 0) || a.panels - b.panels,
-    measured: (a, b) => {
-      const ma = measuredShare(a)?.share ?? -1;
-      const mb = measuredShare(b)?.share ?? -1;
-      return mb - ma || (b.est ?? 0) - (a.est ?? 0);
-    },
     panels: (a, b) => a.panels - b.panels || (b.est ?? 0) - (a.est ?? 0),
     name: (a, b) => a.name.localeCompare(b.name, 'ja'),
   };
@@ -130,14 +97,9 @@ function visibleLayouts() {
 /* ---------- カード描画 ---------- */
 
 function cardHtml(layout) {
-  const m = measuredShare(layout);
-  const scoreBadge = state.measured
-    ? (m
-      ? `<span class="badge badge-measured" title="構造シグネチャ ${layout.sig} が ${layout.panels}コマページ ${m.denom} 件中 ${m.hit} 件">実測 ${pct(m.share)}</span>`
-      : `<span class="badge badge-none">実測データなし</span>`)
-    : (layout.custom
-      ? ''
-      : `<span class="badge badge-est">推定 ${layout.est}</span>`);
+  const scoreBadge = layout.custom
+    ? ''
+    : `<span class="badge badge-est">推定 ${layout.est}</span>`;
   const originBadge = layout.shared
     ? '<span class="badge badge-shared">共有</span>'
     : (layout.custom ? '<span class="badge badge-custom">自作</span>' : '');
@@ -184,28 +146,15 @@ function openDetail(id) {
   if (!layout) return;
   state.selected = layout;
 
-  const m = measuredShare(layout);
-  const countShare = measuredCountShare(layout.panels);
-  const largeRate = measuredLargeRate(layout.panels);
-
   const siblings = allLayouts().filter(
     l => l.sig === layout.sig && l.panels === layout.panels && l.id !== layout.id);
 
-  const measuredBlock = state.measured ? `
+  const siblingBlock = siblings.length ? `
     <section class="detail-section">
-      <h4>実測データ（取り込み済み）</h4>
-      <dl class="stat-list">
-        <div><dt>この構造の出現率</dt><dd>${m ? `${pct(m.share)} <small>(${m.hit} / ${m.denom} ページ)</small>` : '該当なし'}</dd></div>
-        <div><dt>${layout.panels}コマページの割合</dt><dd>${countShare != null ? pct(countShare) : '—'}</dd></div>
-        <div><dt>${layout.panels}コマ中の大ゴマ率</dt><dd>${largeRate != null ? pct(largeRate) : '—'}</dd></div>
-      </dl>
-      ${siblings.length ? `<p class="note">構造シグネチャ <code>${layout.sig}</code> は次のパターンとも一致します（実測値は共通）: ${siblings.map(s => escapeHtml(s.name)).join('、')}</p>` : ''}
-      <p class="note">実測はコマの外接矩形に基づくため、<strong>斜め分割や重ねゴマは判別できません</strong>。段構成とコマ数のみの統計です。</p>
-    </section>` : `
-    <section class="detail-section">
-      <h4>実測データ</h4>
-      <p class="note">未取り込みです。下部の「実測データを取り込む」から Manga109 のアノテーション XML を読み込むと、この構造の実際の出現率が表示されます。</p>
-    </section>`;
+      <h4>同じ段構成のパターン</h4>
+      <p class="note">構造シグネチャ <code>${layout.sig}</code> は次のパターンとも一致します: ${
+        siblings.map(s => escapeHtml(s.name)).join('、')}</p>
+    </section>` : '';
 
   document.getElementById('detail-body').innerHTML = `
     <div class="detail-grid">
@@ -238,7 +187,7 @@ function openDetail(id) {
         </div>
       </div>
     </div>
-    ${measuredBlock}`;
+    ${siblingBlock}`;
 
   const dlg = document.getElementById('detail');
   dlg.querySelector('[data-act="edit"]').addEventListener('click', () => {
@@ -316,74 +265,20 @@ function buildFilters() {
   });
 }
 
-/* ---------- 取り込み UI ---------- */
-
-function buildImporter() {
-  const status = document.getElementById('import-status');
-  const input = document.getElementById('xml-input');
-
-  input.addEventListener('change', async () => {
-    if (!input.files.length) return;
-    const splitSpread = document.getElementById('split-spread').checked;
-    status.className = 'import-status working';
-    status.textContent = '読み込み中…';
-
-    try {
-      const { stats, errors } = await importFiles(
-        input.files, { splitSpread },
-        (i, total, name) => { status.textContent = `読み込み中 ${i}/${total}: ${name}`; }
-      );
-      saveStats(stats);
-      state.measured = stats;
-      state.sort = 'measured';
-      document.getElementById('sort').value = 'measured';
-      renderMeasuredSummary();
-      renderGrid();
-      renderAnalysis();
-
-      status.className = 'import-status ok';
-      status.textContent =
-        `${stats.books.length} 冊 / ${stats.totalPages} ページを解析。` +
-        `うち 2〜7コマ: ${stats.countedPages} ページ。` +
-        (errors.length ? ` 失敗 ${errors.length} 件: ${errors[0]}` : '');
-    } catch (e) {
-      status.className = 'import-status err';
-      status.textContent = `失敗: ${e.message}`;
-    } finally {
-      input.value = '';
-    }
-  });
-
-  document.getElementById('clear-measured').addEventListener('click', () => {
-    clearStats();
-    state.measured = null;
-    if (state.sort === 'measured') {
-      state.sort = 'est';
-      document.getElementById('sort').value = 'est';
-    }
-    renderMeasuredSummary();
-    renderGrid();
-    renderAnalysis();
-    status.className = 'import-status';
-    status.textContent = '実測データを削除しました。';
-  });
-}
-
 /* ---------- 持ち出し・持ち込み ---------- */
 
 function buildSync() {
   const status = document.getElementById('sync-status');
 
   document.getElementById('export-patterns').addEventListener('click', () => {
-    if (customLayouts.length === 0 && !state.measured) {
+    if (customLayouts.length === 0) {
       status.className = 'sync-status err';
-      status.textContent = '書き出すデータがありません。';
+      status.textContent = '書き出す自作パターンがありません。';
       return;
     }
     const n = exportPatterns();
     status.className = 'sync-status ok';
-    status.textContent = `patterns.json を書き出しました（自作 ${n} 件`
-      + (state.measured ? '、実測データを含む' : '') + '）。';
+    status.textContent = `patterns.json を書き出しました（自作 ${n} 件）。`;
   });
 
   const input = document.getElementById('import-patterns');
@@ -392,13 +287,11 @@ function buildSync() {
     try {
       const json = JSON.parse(await input.files[0].text());
       const r = importPatterns(json);
-      renderMeasuredSummary();
       renderGrid();
       renderAnalysis();
       status.className = 'sync-status ok';
       status.textContent = `${r.added} 件を追加しました`
-        + (r.skipped ? `（重複・不正な ${r.skipped} 件は取り込まず）` : '')
-        + (r.measured ? '。実測データも取り込みました' : '') + '。';
+        + (r.skipped ? `（重複・不正な ${r.skipped} 件は取り込まず）` : '') + '。';
     } catch (e) {
       status.className = 'sync-status err';
       status.textContent = `失敗: ${e.message}`;
@@ -408,61 +301,11 @@ function buildSync() {
   });
 }
 
-function renderMeasuredSummary() {
-  const box = document.getElementById('measured-summary');
-  const m = state.measured;
-  const sortOpt = document.querySelector('#sort option[value="measured"]');
-
-  if (!m) {
-    box.hidden = true;
-    sortOpt.disabled = true;
-    document.getElementById('clear-measured').hidden = true;
-    document.getElementById('data-mode').textContent = '推定値のみ';
-    document.getElementById('data-mode').className = 'mode-badge mode-est';
-    return;
-  }
-
-  box.hidden = false;
-  sortOpt.disabled = false;
-  document.getElementById('clear-measured').hidden = false;
-  document.getElementById('data-mode').textContent = '実測データあり';
-  document.getElementById('data-mode').className = 'mode-badge mode-measured';
-
-  const rows = [2, 3, 4, 5, 6, 7].map(n => {
-    const c = m.byCount[n] || 0;
-    const share = m.countedPages ? c / m.countedPages : 0;
-    const large = c ? (m.largeByCount[n] || 0) / c : 0;
-    return { n, c, share, large };
-  });
-  const max = Math.max(...rows.map(r => r.share), 0.0001);
-
-  box.innerHTML = `
-    <h3>実測サマリー <small>${m.books.length} 冊 / ${m.countedPages} ページ（2〜7コマ）</small></h3>
-    <table class="summary-table">
-      <thead><tr><th>コマ数</th><th>ページ数</th><th>割合</th><th>大ゴマ率</th></tr></thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr>
-            <td>${r.n}</td>
-            <td>${r.c}</td>
-            <td>
-              <span class="bar" style="--w:${(r.share / max * 100).toFixed(1)}%"></span>
-              <span class="bar-val">${pct(r.share)}</span>
-            </td>
-            <td>${r.c ? pct(r.large) : '—'}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>
-    <p class="note">除外: 0〜1コマ・8コマ以上のページ ${m.outOfRange} 件（扉・見開き等を含む）。</p>`;
-}
-
 /* ---------- 起動 ---------- */
 
 async function init() {
   buildFilters();
-  buildImporter();
   buildSync();
-  renderMeasuredSummary();
   renderGrid();
   initEditor();
 
