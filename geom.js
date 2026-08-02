@@ -32,6 +32,21 @@ function bboxOf(poly) {
   };
 }
 
+/* 正規化座標 ⇄ ページ座標。線の操作は見た目どおりに動かしたいので
+   ページ比を反映した座標で計算する。 */
+const toPage = ([x, y]) => [x * PAGE_W, y * PAGE_H];
+const fromPage = ([x, y]) => [x / PAGE_W, y / PAGE_H];
+
+/** 点と線分の距離 */
+function distToSegment(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-12) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+  let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
 /** 点がポリゴン内部にあるか（レイキャスト） */
 function pointInPoly(pt, poly) {
   let inside = false;

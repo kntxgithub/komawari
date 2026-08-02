@@ -401,6 +401,13 @@ select {
 .cell-dim { opacity: .28; }
 .cell-picked { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
 .ed-canvas-order { cursor: pointer; }
+.ed-canvas-line { cursor: move; }
+.line-handle {
+  stroke: var(--accent);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  opacity: .85;
+}
 .cell-preview {
   fill: none;
   stroke: var(--accent);

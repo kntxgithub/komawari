@@ -35,11 +35,12 @@ function deleteCustomLayout(id) {
 const ed = {
   cells: [rect(0, 0, 1, 1)],
   history: [],
-  mode: 'split',      // 'split' | 'overlay' | 'order'
+  mode: 'split',      // 'split' | 'overlay' | 'line' | 'order'
   snap: true,
   drag: null,         // { from:[x,y], to:[x,y] }
   manualOrder: false, // 読み順を手で入れ替えたら true。以後は自動整列しない
   pick: null,         // 入れ替え待ちのコマ番号
+  hoverLine: null,    // 線モードでカーソル下にある線
 };
 
 const clone = cells => cells.map(c => c.map(p => [p[0], p[1]]));
@@ -90,6 +91,165 @@ function planSplit(drag, freeAngle) {
   return parts ? { target, parts } : null;
 }
 
+/* ---------- 境界線の移動 ---------- */
+
+const LINE_GRAB = 4.5;   // 線をつかめる距離（ページ座標）
+const LINE_EPS = 0.7;    // 同一直線・重なりとみなす許容量（ページ座標）
+
+/** 全コマの辺をページ座標で列挙する */
+function allEdges() {
+  const out = [];
+  ed.cells.forEach((cell, ci) => {
+    for (let i = 0; i < cell.length; i++) {
+      const j = (i + 1) % cell.length;
+      out.push({ ci, i, j, a: toPage(cell[i]), b: toPage(cell[j]) });
+    }
+  });
+  return out;
+}
+
+/** ページの外枠上の辺か（外枠は動かせない） */
+function onPageBorder(e) {
+  const near = (v, t) => Math.abs(v - t) < LINE_EPS;
+  return (near(e.a[0], 0) && near(e.b[0], 0))
+      || (near(e.a[0], PAGE_W) && near(e.b[0], PAGE_W))
+      || (near(e.a[1], 0) && near(e.b[1], 0))
+      || (near(e.a[1], PAGE_H) && near(e.b[1], PAGE_H));
+}
+
+/**
+ * つかんだ辺と同じ直線上にあり、かつ区間が繋がっている辺をまとめる。
+ * 「上1コマ＋下3コマ」の横線のように、1本の線が複数コマに接している場合でも
+ * まとめて動かすため。区間が離れていれば別の線として扱う
+ * （2段組で各段に別々の縦線がある場合など）。
+ */
+function buildLineGroup(seed) {
+  const dx = seed.b[0] - seed.a[0], dy = seed.b[1] - seed.a[1];
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return null;
+
+  const d = [dx / len, dy / len];
+  const normal = [-d[1], d[0]];
+  const p0 = seed.a;
+  const proj = q => (q[0] - p0[0]) * d[0] + (q[1] - p0[1]) * d[1];
+  const dist = q => Math.abs((q[0] - p0[0]) * normal[0] + (q[1] - p0[1]) * normal[1]);
+
+  const items = allEdges()
+    .filter(e => dist(e.a) < LINE_EPS && dist(e.b) < LINE_EPS)
+    .map(e => {
+      const s = [proj(e.a), proj(e.b)].sort((x, y) => x - y);
+      return { e, s0: s[0], s1: s[1] };
+    });
+
+  let lo = Math.min(proj(seed.a), proj(seed.b));
+  let hi = Math.max(proj(seed.a), proj(seed.b));
+  const chosen = new Set();
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const it of items) {
+      if (chosen.has(it)) continue;
+      if (Math.min(hi, it.s1) - Math.max(lo, it.s0) <= LINE_EPS) continue;
+      chosen.add(it);
+      lo = Math.min(lo, it.s0);
+      hi = Math.max(hi, it.s1);
+      grew = true;
+    }
+  }
+
+  const verts = new Map();
+  for (const it of chosen) {
+    verts.set(`${it.e.ci}:${it.e.i}`, { ci: it.e.ci, vi: it.e.i });
+    verts.set(`${it.e.ci}:${it.e.j}`, { ci: it.e.ci, vi: it.e.j });
+  }
+  return {
+    normal, origin: p0,
+    verts: [...verts.values()],
+    edges: [...chosen].map(it => it.e),
+  };
+}
+
+/** 直線 (p,d) と (q,e) の交点。平行なら null */
+function lineIntersect(p, d, q, e) {
+  const den = d[0] * e[1] - d[1] * e[0];
+  if (Math.abs(den) < 1e-9) return null;
+  const s = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / den;
+  return [p[0] + s * d[0], p[1] + s * d[1]];
+}
+
+/** その頂点が乗っているページ外枠（複数の場合は角） */
+function bordersOf(v) {
+  const out = [];
+  if (Math.abs(v[0]) < LINE_EPS) out.push({ q: [0, 0], e: [0, 1] });
+  if (Math.abs(v[0] - PAGE_W) < LINE_EPS) out.push({ q: [PAGE_W, 0], e: [0, 1] });
+  if (Math.abs(v[1]) < LINE_EPS) out.push({ q: [0, 0], e: [1, 0] });
+  if (Math.abs(v[1] - PAGE_H) < LINE_EPS) out.push({ q: [0, PAGE_H], e: [1, 0] });
+  return out;
+}
+
+/** 指定位置にある動かせる線を探す */
+function findLineAt(ptNorm) {
+  const p = toPage(ptNorm);
+  let best = null;
+  for (const e of allEdges()) {
+    if (onPageBorder(e)) continue;
+    const dist = distToSegment(p, e.a, e.b);
+    if (dist < LINE_GRAB && (!best || dist < best.dist)) best = { e, dist };
+  }
+  return best ? buildLineGroup(best.e) : null;
+}
+
+/* 線を動かして作れるコマの最小の辺（ページ座標）。
+   面積だけで見ると、細長い帯のようなコマが作れてしまうため縦横で見る。 */
+const MIN_SIDE = 6;
+
+/**
+ * 線を法線方向へ平行移動した結果を返す。
+ * はみ出す・コマが潰れる場合は null（その位置には動かせない）。
+ */
+function moveLine(group, deltaNorm) {
+  const dp = [deltaNorm[0] * PAGE_W, deltaNorm[1] * PAGE_H];
+  const n = group.normal;
+  const t = dp[0] * n[0] + dp[1] * n[1];
+
+  // 移動後の直線
+  const p1 = [group.origin[0] + n[0] * t, group.origin[1] + n[1] * t];
+  const dir = [-n[1], n[0]];
+  const inside = q => q[0] >= -LINE_EPS && q[0] <= PAGE_W + LINE_EPS
+                   && q[1] >= -LINE_EPS && q[1] <= PAGE_H + LINE_EPS;
+
+  const next = clone(ed.cells);
+  for (const { ci, vi } of group.verts) {
+    const v = toPage(ed.cells[ci][vi]);
+    const borders = bordersOf(v);
+
+    let moved;
+    if (borders.length === 0) {
+      // 内側の頂点はそのまま法線方向へ
+      moved = [v[0] + n[0] * t, v[1] + n[1] * t];
+    } else {
+      // 外枠に接する頂点は枠に沿ってスライドさせる。
+      // 法線方向に動かすとページの外へ出てしまうため。
+      for (const b of borders) {
+        const hit = lineIntersect(p1, dir, b.q, b.e);
+        if (hit && inside(hit)) { moved = hit; break; }
+      }
+    }
+    if (!moved || !inside(moved)) return null;
+
+    const clamp = (val, max) => Math.min(max, Math.max(0, val));
+    next[ci][vi] = [
+      round6(clamp(moved[0], PAGE_W) / PAGE_W),
+      round6(clamp(moved[1], PAGE_H) / PAGE_H),
+    ];
+  }
+  for (const ci of new Set(group.verts.map(v => v.ci))) {
+    const b = bboxOf(next[ci]);
+    if ((b.x1 - b.x0) * PAGE_W < MIN_SIDE) return null;
+    if ((b.y1 - b.y0) * PAGE_H < MIN_SIDE) return null;
+  }
+  return next;
+}
+
 /** ドラッグから重ねゴマの矩形を決める */
 function planOverlay(drag) {
   const x0 = Math.min(drag.from[0], drag.to[0]);
@@ -106,7 +266,10 @@ function editorSvg(preview) {
   const parts = [];
   parts.push(`<rect class="page-bg" x="0" y="0" width="${PAGE_W}" height="${PAGE_H}"/>`);
 
-  ed.cells.forEach((cell, i) => {
+  // 線の移動中は移動後の形を直接見せる
+  const cells = preview && preview.kind === 'line' ? preview.cells : ed.cells;
+
+  cells.forEach((cell, i) => {
     const scaled = cell.map(([x, y]) => [x * PAGE_W, y * PAGE_H]);
     const shaped = inset(scaled, GUTTER);
     const dim = preview && preview.kind === 'split' && preview.target === i;
@@ -141,11 +304,32 @@ function editorSvg(preview) {
     );
   }
 
+  // つかんでいる／つかめる線を、コマの隙間に重ねて示す
+  const marked = preview && preview.kind === 'line' ? preview.group
+    : (ed.mode === 'line' && !ed.drag ? ed.hoverLine : null);
+  if (marked) {
+    const src = preview && preview.kind === 'line' ? preview.cells : ed.cells;
+    for (const e of marked.edges) {
+      const a = toPage(src[e.ci][e.i]);
+      const b = toPage(src[e.ci][e.j]);
+      parts.push(
+        `<line class="line-handle" x1="${round(a[0])}" y1="${round(a[1])}" ` +
+        `x2="${round(b[0])}" y2="${round(b[1])}"/>`
+      );
+    }
+  }
+
   return parts.join('');
 }
 
 function currentPreview() {
   if (!ed.drag) return null;
+  if (ed.mode === 'line') {
+    if (!ed.drag.group) return null;
+    const delta = [ed.drag.to[0] - ed.drag.from[0], ed.drag.to[1] - ed.drag.from[1]];
+    const cells = moveLine(ed.drag.group, delta) || ed.drag.lastValid;
+    return cells ? { kind: 'line', cells, group: ed.drag.group } : null;
+  }
   if (ed.mode === 'overlay') {
     const poly = planOverlay(ed.drag);
     return poly ? { kind: 'overlay', poly } : null;
@@ -158,6 +342,7 @@ function refreshEditor() {
   const svg = document.getElementById('ed-canvas');
   svg.innerHTML = editorSvg(currentPreview());
   svg.classList.toggle('ed-canvas-order', ed.mode === 'order');
+  svg.classList.toggle('ed-canvas-line', ed.mode === 'line');
   renderAnalysis();
   document.getElementById('ed-undo').disabled = ed.history.length === 0;
   document.getElementById('ed-auto-order').disabled = !ed.manualOrder;
@@ -225,6 +410,13 @@ function commitDrag() {
   const preview = currentPreview();
   if (!preview) { ed.drag = null; refreshEditor(); return; }
 
+  if (preview.kind === 'line') {
+    pushHistory();
+    ed.drag = null;
+    setCells(preview.cells);
+    return;
+  }
+
   pushHistory();
   const next = ed.cells.slice();
   if (preview.kind === 'split') {
@@ -289,13 +481,33 @@ function initEditor() {
     if (ed.mode === 'order') { handleOrderClick(p); return; }
     try { svg.setPointerCapture(e.pointerId); } catch { /* 捕捉できなくても操作は続く */ }
     ed.drag = { from: p, to: p, freeAngle: ed.mode === 'split' && (ed.snap ? e.shiftKey : !e.shiftKey) };
+    if (ed.mode === 'line') {
+      ed.drag.group = findLineAt(p);
+      ed.drag.lastValid = null;
+    }
     refreshEditor();
   });
 
   svg.addEventListener('pointermove', e => {
-    if (!ed.drag) return;
-    ed.drag.to = toNorm(e, svg);
+    const p = toNorm(e, svg);
+    if (!ed.drag) {
+      // つかめる線を先に光らせておく
+      if (ed.mode === 'line') {
+        const found = findLineAt(p);
+        const same = !!found === !!ed.hoverLine
+          && (!found || found.edges[0].ci === ed.hoverLine.edges[0].ci);
+        ed.hoverLine = found;
+        if (!same) refreshEditor();
+      }
+      return;
+    }
+    ed.drag.to = p;
     ed.drag.freeAngle = ed.mode === 'split' && (ed.snap ? e.shiftKey : !e.shiftKey);
+    if (ed.mode === 'line' && ed.drag.group) {
+      const delta = [p[0] - ed.drag.from[0], p[1] - ed.drag.from[1]];
+      const moved = moveLine(ed.drag.group, delta);
+      if (moved) ed.drag.lastValid = moved;   // 動かせない位置では直前の形を保つ
+    }
     refreshEditor();
   });
 
@@ -339,15 +551,21 @@ function initEditor() {
     ed.snap = e.target.checked;
   });
 
+  svg.addEventListener('pointerleave', () => {
+    if (ed.hoverLine) { ed.hoverLine = null; refreshEditor(); }
+  });
+
   const HINTS = {
     split: 'コマの上をドラッグすると、その方向に分割線が入ります。Shift を押しながらで角度が自由になります。',
     overlay: 'ドラッグした範囲に重ねゴマを追加します。',
+    line: '境界線に近づけると線が光ります。ドラッグすると線と垂直な向きに平行移動します。ページの外枠は動かせません。',
     order: 'コマを2つ順にクリックすると、その2つの読み順を入れ替えます。',
   };
   document.querySelectorAll('input[name="ed-mode"]').forEach(r => {
     r.addEventListener('change', e => {
       ed.mode = e.target.value;
       ed.pick = null;
+      ed.hoverLine = null;
       document.getElementById('ed-hint').textContent = HINTS[ed.mode];
       refreshEditor();
     });
