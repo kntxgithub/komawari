@@ -47,6 +47,9 @@ function renderLayoutSvg(layout, { showNumbers = true } = {}) {
   );
   parts.push(`<rect class="page-bg" x="0" y="0" width="${PAGE_W}" height="${PAGE_H}"/>`);
 
+  // 配列の並びは重ね順。番号は読み順から引く
+  const labels = readingLabels(layout.cells, layout.readIndex);
+
   layout.cells.forEach((cell, i) => {
     const scaled = cell.map(([x, y]) => [x * PAGE_W, y * PAGE_H]);
     const shaped = inset(scaled, GUTTER);
@@ -57,7 +60,7 @@ function renderLayoutSvg(layout, { showNumbers = true } = {}) {
       const [cx, cy] = centroid(shaped);
       parts.push(
         `<text class="cell-no" x="${round(cx)}" y="${round(cy)}" ` +
-        `text-anchor="middle" dominant-baseline="central">${i + 1}</text>`
+        `text-anchor="middle" dominant-baseline="central">${labels[i]}</text>`
       );
     }
   });

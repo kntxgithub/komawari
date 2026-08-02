@@ -252,12 +252,38 @@ function flipCellsY(cells) {
   return cells.map(c => c.map(([x, y]) => [x, round6(1 - y)]).reverse());
 }
 
-/** 読み順（右上 → 左 → 下段）に並べ替えたコマ配列を返す */
-function sortToReadingOrder(cells) {
+/**
+ * 読み順（右上 → 左 → 下段）を、コマ番号の並びとして返す。
+ * 返り値の k 番目の要素が「k+1 番目に読むコマ」の添字。
+ *
+ * コマ配列そのものは並べ替えない。配列の並びは重ね順（奥から手前）であり、
+ * 読み順とは別の概念だから。両者を同じ配列で表すと、読み順を入れ替えた
+ * ときに重ねゴマが土台の下に潜ってしまう。
+ */
+function readingOrderIndices(cells) {
   const boxes = cells.map((c, i) => Object.assign(bboxOf(c), { _i: i }));
   const order = [];
   for (const t of tiersFromBoxes(boxes)) {
     for (const b of t.items) order.push(b._i);
   }
-  return order.map(i => cells[i]);
+  return order;
+}
+
+/**
+ * コマごとの読み順ラベル（1始まり）を返す。
+ * readIndex が無い場合は「配列の並び＝読み順」とみなす。
+ */
+function readingLabels(cells, readIndex) {
+  const n = cells.length;
+  const order = isValidReadIndex(readIndex, n) ? readIndex : cells.map((_, i) => i);
+  const labels = new Array(n);
+  order.forEach((cellIndex, k) => { labels[cellIndex] = k + 1; });
+  return labels;
+}
+
+/** readIndex が 0..n-1 の並べ替えとして妥当か */
+function isValidReadIndex(readIndex, n) {
+  if (!Array.isArray(readIndex) || readIndex.length !== n) return false;
+  const seen = new Set(readIndex);
+  return seen.size === n && readIndex.every(i => Number.isInteger(i) && i >= 0 && i < n);
 }

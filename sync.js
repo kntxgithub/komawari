@@ -44,6 +44,10 @@ function normalizeIncoming(raw, { shared }) {
     panels: cells.length,
     name: String(raw.name || `${cells.length}コマ`).slice(0, 60),
     cells,
+    // 壊れていれば「配列の並び＝読み順」に戻す
+    readIndex: isValidReadIndex(raw.readIndex, cells.length)
+      ? raw.readIndex.slice()
+      : cells.map((_, i) => i),
     sig: signatureFromBoxes(cells.map(bboxOf)),
     tags: autoTags(cells),
     note: String(raw.note || (shared ? '共有ファイルから読み込んだパターン。' : '')).slice(0, 200),
@@ -62,7 +66,8 @@ function exportPatterns() {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     custom: customLayouts.map(l => ({
-      id: l.id, name: l.name, cells: l.cells, note: l.note, createdAt: l.createdAt,
+      id: l.id, name: l.name, cells: l.cells, readIndex: l.readIndex,
+      note: l.note, createdAt: l.createdAt,
     })),
   };
 

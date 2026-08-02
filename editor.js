@@ -33,7 +33,8 @@ function deleteCustomLayout(id) {
 /* ---------- エディタ状態 ---------- */
 
 const ed = {
-  cells: [rect(0, 0, 1, 1)],
+  cells: [rect(0, 0, 1, 1)],   // 重ね順（奥 → 手前）。読み順ではない
+  readIndex: [0],              // 読み順。k 番目の要素が k+1 番目に読むコマの添字
   history: [],
   mode: 'split',      // 'split' | 'overlay' | 'line' | 'order'
   snap: true,
@@ -47,16 +48,26 @@ const ed = {
 const clone = cells => cells.map(c => c.map(p => [p[0], p[1]]));
 
 function pushHistory() {
-  ed.history.push({ cells: clone(ed.cells), manualOrder: ed.manualOrder });
+  ed.history.push({
+    cells: clone(ed.cells),
+    readIndex: ed.readIndex.slice(),
+    manualOrder: ed.manualOrder,
+  });
   if (ed.history.length > 60) ed.history.shift();
 }
 
 /**
  * コマ列を差し替える。
- * 手動で読み順を調整済みなら、渡された並びをそのまま尊重する。
+ *
+ * ed.cells の並びは「重ね順（奥から手前）」であり、読み順ではない。
+ * 読み順は ed.readIndex が持つ。手動調整済みなら呼び出し側が対応する
+ * readIndex を渡し、そうでなければ形状から引き直す。
  */
-function setCells(cells) {
-  ed.cells = ed.manualOrder ? cells : sortToReadingOrder(cells);
+function setCells(cells, readIndex) {
+  ed.cells = cells;
+  ed.readIndex = (ed.manualOrder && isValidReadIndex(readIndex, cells.length))
+    ? readIndex
+    : readingOrderIndices(cells);
   refreshEditor();
 }
 
@@ -304,6 +315,9 @@ function editorSvg(preview) {
   const cells = preview && (preview.kind === 'line' || preview.kind === 'move')
     ? preview.cells : ed.cells;
 
+  // 描く順は配列の並び（＝重ね順）。番号は読み順から引く
+  const labels = readingLabels(cells, ed.readIndex);
+
   cells.forEach((cell, i) => {
     const scaled = cell.map(([x, y]) => [x * PAGE_W, y * PAGE_H]);
     const shaped = inset(scaled, GUTTER);
@@ -318,7 +332,7 @@ function editorSvg(preview) {
       const [cx, cy] = centroid(shaped);
       parts.push(
         `<text class="cell-no" x="${round(cx)}" y="${round(cy)}" ` +
-        `text-anchor="middle" dominant-baseline="central">${i + 1}</text>`
+        `text-anchor="middle" dominant-baseline="central">${labels[i]}</text>`
       );
     }
   });
@@ -408,7 +422,7 @@ function renderAnalysis() {
       <div><dt>読み順</dt><dd>${ed.manualOrder
         ? '手動で調整済み'
         : '自動（右上 → 左 → 下段）'}${ed.pick != null
-          ? ` <span class="warn">— ${ed.pick + 1} を選択中。入れ替え先をクリック</span>`
+          ? ` <span class="warn">— ${readingLabels(ed.cells, ed.readIndex)[ed.pick]} を選択中。入れ替え先をクリック</span>`
           : ''}</dd></div>
       <div><dt>自動タグ</dt><dd>${
         tags.length
@@ -441,10 +455,11 @@ function commitDrag() {
   const preview = currentPreview();
   if (!preview) { ed.drag = null; refreshEditor(); return; }
 
+  // 形だけが変わる操作。コマの添字は動かないので読み順もそのまま
   if (preview.kind === 'line') {
     pushHistory();
     ed.drag = null;
-    setCells(preview.cells);
+    setCells(preview.cells, ed.readIndex);
     return;
   }
 
@@ -454,25 +469,30 @@ function commitDrag() {
     // ほぼ動いていないなら「選ぶだけ」の操作とみなす
     if (dist < 0.01) { refreshEditor(); return; }
     pushHistory();
-    const moved = preview.cells[preview.index];
-    setCells(preview.cells);
-    // 並べ替えで位置が変わるので、選択を追いかけ直す
-    ed.overlayPick = ed.cells.findIndex(c => samePoly(c, moved));
-    refreshEditor();
+    setCells(preview.cells, ed.readIndex);
     return;
   }
 
   pushHistory();
+  const t = preview.target;
   const next = ed.cells.slice();
+  let readIndex;
+
   if (preview.kind === 'split') {
-    // 分割してできた2コマは、元のコマがあった位置に差し込む。
-    // 手動で読み順を調整済みでも、その並びが崩れないようにするため。
-    next.splice(preview.target, 1, ...sortToReadingOrder(preview.parts));
+    // 分割した2コマは元のコマと同じ層に置く（重ね順は保つ）
+    const sub = readingOrderIndices(preview.parts);
+    next.splice(t, 1, ...preview.parts);
+    // t より後ろの添字は1つずれる。元のコマの読み順位置に2コマを差し込む
+    readIndex = ed.readIndex.flatMap(i =>
+      i === t ? sub.map(k => t + k) : [i > t ? i + 1 : i]);
   } else {
+    // 重ねゴマは一番手前に足し、読み順は末尾に置く
     next.push(preview.poly);
+    readIndex = ed.readIndex.concat([next.length - 1]);
   }
+
   ed.drag = null;
-  setCells(next);
+  setCells(next, readIndex);
 }
 
 /**
@@ -509,11 +529,14 @@ function handleOrderClick(pt) {
     ed.pick = null;
   } else {
     pushHistory();
-    const next = ed.cells.slice();
-    [next[ed.pick], next[hit]] = [next[hit], next[ed.pick]];
+    // 入れ替えるのは読み順だけ。コマ配列は触らないので重ね順は変わらない
+    const next = ed.readIndex.slice();
+    const pa = next.indexOf(ed.pick);
+    const pb = next.indexOf(hit);
+    [next[pa], next[pb]] = [next[pb], next[pa]];
+    ed.readIndex = next;
     ed.manualOrder = true;
     ed.pick = null;
-    ed.cells = next;
   }
   refreshEditor();
 }
@@ -579,6 +602,7 @@ function initEditor() {
     const prev = ed.history.pop();
     if (!prev) return;
     ed.cells = prev.cells;
+    ed.readIndex = prev.readIndex;
     ed.manualOrder = prev.manualOrder;
     ed.pick = null;
     ed.overlayPick = null;
@@ -598,7 +622,9 @@ function initEditor() {
     if (i == null || !isRemovable(i)) return;
     pushHistory();
     ed.overlayPick = null;
-    setCells(ed.cells.filter((_, k) => k !== i));
+    // 消したコマより後ろの添字は1つ前にずれる
+    const readIndex = ed.readIndex.filter(k => k !== i).map(k => k > i ? k - 1 : k);
+    setCells(ed.cells.filter((_, k) => k !== i), readIndex);
   });
 
   document.getElementById('ed-auto-order').addEventListener('click', () => {
@@ -666,6 +692,7 @@ function saveFromEditor() {
     panels: n,
     name,
     cells: clone(ed.cells),
+    readIndex: ed.readIndex.slice(),
     sig,
     tags: autoTags(ed.cells),
     note: 'エディタで作成したパターン。タグと段構成は形状から自動判定しています。',
@@ -686,10 +713,14 @@ function saveFromEditor() {
 /** カタログ詳細から編集用に読み込む */
 function loadIntoEditor(layout) {
   pushHistory();
-  // 元のパターンが持つ読み順をそのまま引き継ぐ（自動整列で書き換えない）
+  // 元のパターンが持つ読み順と重ね順をそのまま引き継ぐ（自動整列で書き換えない）
   ed.manualOrder = true;
   ed.pick = null;
-  setCells(clone(layout.cells));
+  ed.overlayPick = null;
+  const cells = clone(layout.cells);
+  setCells(cells, isValidReadIndex(layout.readIndex, cells.length)
+    ? layout.readIndex.slice()
+    : cells.map((_, i) => i));
   document.getElementById('ed-name').value = layout.custom ? layout.name : layout.name + ' 改';
   document.getElementById('ed-status').textContent = '';
   document.getElementById('editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
