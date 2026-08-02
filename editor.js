@@ -238,6 +238,25 @@ function commitDrag() {
   setCells(next);
 }
 
+/**
+ * ページ全体を変形する（反転など）。
+ * 反転すると読み順の前提が変わるため、必ず自動判定に戻す。
+ * 手動で調整していた場合はその旨を伝える（元に戻すで復帰できる）。
+ */
+function applyTransform(transform, label) {
+  pushHistory();
+  const wasManual = ed.manualOrder;
+  ed.manualOrder = false;
+  ed.pick = null;
+  setCells(transform(ed.cells));
+
+  const status = document.getElementById('ed-status');
+  status.className = 'ed-status';
+  status.textContent = wasManual
+    ? `${label}しました。読み順は自動判定に振り直しています（「元に戻す」で調整前に復帰）。`
+    : `${label}しました。`;
+}
+
 /** 読み順モードのクリック処理。2つ選ぶと入れ替える */
 function handleOrderClick(pt) {
   let hit = -1;
@@ -310,6 +329,11 @@ function initEditor() {
     ed.pick = null;
     setCells(ed.cells);
   });
+
+  document.getElementById('ed-mirror-x')
+    .addEventListener('click', () => applyTransform(mirrorCellsX, '左右反転'));
+  document.getElementById('ed-flip-y')
+    .addEventListener('click', () => applyTransform(flipCellsY, '上下反転'));
 
   document.getElementById('ed-snap').addEventListener('change', e => {
     ed.snap = e.target.checked;

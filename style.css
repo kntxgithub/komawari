@@ -353,7 +353,8 @@ select {
 .ed-tools { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
 .ed-tools .chip input { display: none; }
 
-.ed-buttons { display: flex; gap: 8px; margin-bottom: 16px; }
+.ed-buttons { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.ed-buttons + .ed-buttons { margin-bottom: 16px; }
 .btn-ghost:disabled { opacity: .4; cursor: default; }
 
 .ed-subhead {

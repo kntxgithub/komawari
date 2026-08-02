@@ -224,6 +224,19 @@ function autoTags(cells) {
   return [...tags];
 }
 
+/**
+ * ページを左右反転する（x → 1-x）。
+ * 鏡像にすると頂点の周回方向が裏返るので、並びも戻しておく。
+ */
+function mirrorCellsX(cells) {
+  return cells.map(c => c.map(([x, y]) => [round6(1 - x), y]).reverse());
+}
+
+/** ページを上下反転する（y → 1-y） */
+function flipCellsY(cells) {
+  return cells.map(c => c.map(([x, y]) => [x, round6(1 - y)]).reverse());
+}
+
 /** 読み順（右上 → 左 → 下段）に並べ替えたコマ配列を返す */
 function sortToReadingOrder(cells) {
   const boxes = cells.map((c, i) => Object.assign(bboxOf(c), { _i: i }));
